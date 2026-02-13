@@ -1,55 +1,52 @@
-import { useEffect, useRef } from "react";
+async function toggleVideo() {
+  if (!peerConnection.current) return;
 
-function VideoCall({ sendCaption }) {
-  const videoRef = useRef(null);
+  const senders = peerConnection.current.getSenders();
+  const videoSender = senders.find(
+    (sender) => sender.track && sender.track.kind === "video"
+  );
 
-  useEffect(() => {
-    // 🎥 Camera
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        videoRef.current.srcObject = stream;
+  // If video is ON → turn it OFF completely
+  if (videoOn && videoSender) {
+    const track = videoSender.track;
+
+    // Stop camera hardware
+    track.stop();
+
+    // Remove track from peer connection
+    peerConnection.current.removeTrack(videoSender);
+
+    // Remove from local stream
+    if (streamRef.current) {
+      streamRef.current.removeTrack(track);
+    }
+
+    // Clear local preview
+    if (localVideo.current) {
+      localVideo.current.srcObject = null;
+    }
+
+    setVideoOn(false);
+  } 
+  // If video is OFF → turn it ON again
+  else {
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
       });
 
-    // 🎤 Speech to Text
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+      const newTrack = newStream.getVideoTracks()[0];
 
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.lang = "en-US";
+      // Add track back
+      peerConnection.current.addTrack(newTrack, newStream);
 
-      recognition.onresult = (event) => {
-        const transcript =
-          event.results[event.results.length - 1][0].transcript;
-        sendCaption(transcript);
-      };
+      // Update local preview
+      streamRef.current.addTrack(newTrack);
+      localVideo.current.srcObject = streamRef.current;
 
-      recognition.start();
+      setVideoOn(true);
+    } catch (err) {
+      console.error("Error turning camera back on:", err);
     }
-  }, []);
-
-  // ✋ Dummy Sign Detection Button (Hackathon Demo)
-  const handleSignClick = () => {
-    sendCaption("HELLO (Detected Sign)");
-  };
-
-  return (
-    <div>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        width="500"
-        style={{ border: "2px solid black" }}
-      />
-      <br />
-      <button onClick={handleSignClick} style={{ marginTop: "10px" }}>
-        Simulate Sign Detection
-      </button>
-    </div>
-  );
+  }
 }
-
-export default VideoCall;
