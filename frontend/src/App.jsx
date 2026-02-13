@@ -1,13 +1,18 @@
 import { useState } from "react";
 import VideoCall from "./components/VideoCall";
+import CaptionOverlay from "./components/CaptionOverlay";
 
 function App() {
   const [caption, setCaption] = useState("");
 
   return (
-    <div style={{ textAlign: "center" }}>
+    <div style={{ textAlign: "center", position: "relative" }}>
       <h1>Kernel Meet</h1>
+
       <VideoCall sendCaption={setCaption} caption={caption} />
+
+      {/* ✅ THIS WAS MISSING */}
+      <CaptionOverlay caption={caption} />
     </div>
   );
 }

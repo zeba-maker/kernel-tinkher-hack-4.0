@@ -33,10 +33,28 @@ function VideoCall({ sendCaption, caption }) {
     async function init() {
       try {
         console.log("Requesting camera and microphone access...");
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
+        let stream;
+        let retries = 0;
+        const maxRetries = 3;
+
+        // Retry mechanism for camera in use error
+        while (retries < maxRetries) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: true,
+            });
+            break; // Success, exit retry loop
+          } catch (err) {
+            if (err.name === "NotReadableError" && retries < maxRetries - 1) {
+              console.warn(`Camera in use, retrying... (attempt ${retries + 1}/${maxRetries})`);
+              retries++;
+              await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retry
+            } else {
+              throw err; // Re-throw if not NotReadableError or last retry
+            }
+          }
+        }
 
         console.log("Success! Stream obtained:", stream);
         console.log("Video tracks:", stream.getVideoTracks());
@@ -97,15 +115,44 @@ function VideoCall({ sendCaption, caption }) {
           console.log("Initializing speech recognition...");
           const recognition = new SpeechRecognition();
           recognition.continuous = true;
+          recognition.interimResults = true;
           recognition.lang = "en-US";
+          
+          recognition.onstart = () => {
+            console.log("Speech recognition started");
+          };
+          
           recognition.onresult = (event) => {
-            const transcript = event.results[event.results.length - 1][0].transcript;
-            console.log("Speech recognized:", transcript);
-            handleCaption(transcript);
+            let interimTranscript = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const transcript = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                console.log("Speech recognized (final):", transcript);
+                handleCaption(transcript);
+              } else {
+                interimTranscript += transcript;
+              }
+            }
+            if (interimTranscript) {
+              console.log("Speech interim:", interimTranscript);
+            }
           };
+          
           recognition.onerror = (event) => {
-            console.error("Speech recognition error:", event.error);
+            if (event.error !== "aborted") {
+              console.error("Speech recognition error:", event.error);
+            }
           };
+          
+          recognition.onend = () => {
+            console.log("Speech recognition ended, restarting...");
+            try {
+              recognition.start();
+            } catch (e) {
+              console.warn("Could not restart recognition:", e);
+            }
+          };
+          
           recognition.start();
           recognitionRef.current = recognition;
         } else {
@@ -117,6 +164,8 @@ function VideoCall({ sendCaption, caption }) {
           alert("Camera and microphone access denied. Please allow permissions in your browser settings.");
         } else if (error.name === "NotFoundError") {
           alert("No camera or microphone found. Please check your devices.");
+        } else if (error.name === "NotReadableError") {
+          alert("Camera is in use by another application. Please close other apps using the camera and refresh the page.");
         } else {
           alert(`Error accessing media: ${error.message}`);
         }
@@ -127,8 +176,19 @@ function VideoCall({ sendCaption, caption }) {
 
     return () => {
       if (detectedSignTimeoutRef.current) clearTimeout(detectedSignTimeoutRef.current);
-      if (recognitionRef.current) recognitionRef.current.stop();
-      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.warn("Error stopping recognition:", e);
+        }
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => {
+          t.stop();
+        });
+        streamRef.current = null;
+      }
       if (displayVideo.current) {
         displayVideo.current.srcObject = null;
         displayVideo.current.muted = false;
@@ -150,7 +210,6 @@ function VideoCall({ sendCaption, caption }) {
     if (!streamRef.current) return;
     const videoTracks = streamRef.current.getVideoTracks();
     
-    // If video is on, disable it
     if (videoTracks.length > 0 && videoOn) {
       videoTracks.forEach((t) => {
         t.enabled = false;
@@ -159,7 +218,6 @@ function VideoCall({ sendCaption, caption }) {
       return;
     }
 
-    // If video is off, re-enable it
     if (!videoOn && videoTracks.length > 0) {
       videoTracks.forEach((t) => {
         t.enabled = true;
