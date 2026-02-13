@@ -6,261 +6,181 @@ import SignDetector from "./SignDetector";
 const socket = io("http://localhost:5000");
 
 function VideoCall({ sendCaption, caption }) {
-  const localVideo = useRef(null);
-  const remoteVideo = useRef(null);
   const displayVideo = useRef(null);
-  const peerConnection = useRef(null);
+  const remoteVideo = useRef(null);
   const streamRef = useRef(null);
+  const peerConnection = useRef(null);
   const recognitionRef = useRef(null);
+  const [localStream, setLocalStream] = useState(null);
+  const [detectedSign, setDetectedSign] = useState(null);
   const [micOn, setMicOn] = useState(true);
   const [videoOn, setVideoOn] = useState(true);
+  const detectedSignTimeoutRef = useRef(null);
+
+  function handleCaption(text) {
+    sendCaption(text);
+    socket.emit("send-caption", { room: "room1", text });
+  }
+
+  function handleSignDetection(sign) {
+    setDetectedSign(sign);
+    if (detectedSignTimeoutRef.current) clearTimeout(detectedSignTimeoutRef.current);
+    detectedSignTimeoutRef.current = setTimeout(() => setDetectedSign(null), 2000);
+    handleCaption(sign);
+  }
 
   useEffect(() => {
     async function init() {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-
-      streamRef.current = stream;
-      // show local stream until remote appears and mute local preview to avoid echo
-      if (displayVideo.current) {
-        displayVideo.current.srcObject = stream;
-        try {
-          displayVideo.current.muted = true;
-        } catch (e) {}
-      }
-
-      peerConnection.current = new RTCPeerConnection();
-
-      // Add local tracks
-      stream.getTracks().forEach((track) => {
-        peerConnection.current.addTrack(track, stream);
-      });
-
-      // When remote track received
-      peerConnection.current.ontrack = (event) => {
-        remoteVideo.current.srcObject = event.streams[0];
-        // switch display to remote when available and unmute
-        if (displayVideo.current) {
-          displayVideo.current.srcObject = event.streams[0];
-          try {
-            displayVideo.current.muted = false;
-          } catch (e) {}
-        }
-      };
-
-      // Join room
-      socket.emit("join-room", "room1");
-
-      // When another user joins
-      socket.on("user-connected", async (userId) => {
-        const offer = await peerConnection.current.createOffer();
-        await peerConnection.current.setLocalDescription(offer);
-
-        socket.emit("signal", {
-          to: userId,
-          signal: offer,
+      try {
+        console.log("Requesting camera and microphone access...");
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
         });
-      });
 
-      // Receive signaling data
-      socket.on("signal", async (data) => {
-        if (data.signal.type === "offer") {
-          await peerConnection.current.setRemoteDescription(
-            new RTCSessionDescription(data.signal)
-          );
+        console.log("Success! Stream obtained:", stream);
+        console.log("Video tracks:", stream.getVideoTracks());
+        console.log("Audio tracks:", stream.getAudioTracks());
 
-          const answer = await peerConnection.current.createAnswer();
-          await peerConnection.current.setLocalDescription(answer);
+        streamRef.current = stream;
+        setLocalStream(stream);
 
-          socket.emit("signal", {
-            to: data.from,
-            signal: answer,
-          });
-        } else if (data.signal.type === "answer") {
-          await peerConnection.current.setRemoteDescription(
-            new RTCSessionDescription(data.signal)
-          );
+        if (displayVideo.current) {
+          displayVideo.current.srcObject = stream;
+          displayVideo.current.muted = true;
+          console.log("Video element loaded with stream");
         }
-      });
 
-      // Receive captions from other peers
-      socket.on("receive-caption", (data) => {
-        try {
-          const text = data && data.text ? data.text : data;
-          sendCaption(text);
-        } catch (e) {
-          /* ignore */
-        }
-      });
+        peerConnection.current = new RTCPeerConnection();
+        stream.getTracks().forEach((track) => {
+          peerConnection.current.addTrack(track, stream);
+        });
 
-      // 🎤 Speech Recognition for Captions
-      const SpeechRecognition =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
-
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.lang = "en-US";
-
-        recognition.onresult = (event) => {
-          const transcript =
-            event.results[event.results.length - 1][0].transcript;
-          sendCaption(transcript);
-          socket.emit("send-caption", { room: "room1", text: transcript });
+        peerConnection.current.ontrack = (event) => {
+          if (remoteVideo.current) remoteVideo.current.srcObject = event.streams[0];
+          if (displayVideo.current) {
+            displayVideo.current.srcObject = event.streams[0];
+            displayVideo.current.muted = false;
+          }
         };
 
-        recognition.start();
-        recognitionRef.current = recognition;
+        socket.emit("join-room", "room1");
+
+        socket.on("user-connected", async (userId) => {
+          const offer = await peerConnection.current.createOffer();
+          await peerConnection.current.setLocalDescription(offer);
+          socket.emit("signal", { to: userId, signal: offer });
+        });
+
+        socket.on("signal", async (data) => {
+          if (data.signal.type === "offer") {
+            await peerConnection.current.setRemoteDescription(
+              new RTCSessionDescription(data.signal)
+            );
+            const answer = await peerConnection.current.createAnswer();
+            await peerConnection.current.setLocalDescription(answer);
+            socket.emit("signal", { to: data.from, signal: answer });
+          } else if (data.signal.type === "answer") {
+            await peerConnection.current.setRemoteDescription(
+              new RTCSessionDescription(data.signal)
+            );
+          }
+        });
+
+        socket.on("receive-caption", (data) => {
+          const text = data?.text || data;
+          sendCaption(text);
+        });
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+          console.log("Initializing speech recognition...");
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.lang = "en-US";
+          recognition.onresult = (event) => {
+            const transcript = event.results[event.results.length - 1][0].transcript;
+            console.log("Speech recognized:", transcript);
+            handleCaption(transcript);
+          };
+          recognition.onerror = (event) => {
+            console.error("Speech recognition error:", event.error);
+          };
+          recognition.start();
+          recognitionRef.current = recognition;
+        } else {
+          console.warn("Speech Recognition not supported in this browser");
+        }
+      } catch (error) {
+        console.error("Camera/init error:", error);
+        if (error.name === "NotAllowedError") {
+          alert("Camera and microphone access denied. Please allow permissions in your browser settings.");
+        } else if (error.name === "NotFoundError") {
+          alert("No camera or microphone found. Please check your devices.");
+        } else {
+          alert(`Error accessing media: ${error.message}`);
+        }
       }
     }
 
     init();
 
     return () => {
-      // cleanup
-      try {
-        socket.off("user-connected");
-        socket.off("signal");
-      } catch (e) {
-        /* ignore */
+      if (detectedSignTimeoutRef.current) clearTimeout(detectedSignTimeoutRef.current);
+      if (recognitionRef.current) recognitionRef.current.stop();
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      if (displayVideo.current) {
+        displayVideo.current.srcObject = null;
+        displayVideo.current.muted = false;
       }
-
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
-        recognitionRef.current = null;
-      }
-
-      if (peerConnection.current) {
-        try {
-          peerConnection.current.close();
-        } catch (e) {}
-        peerConnection.current = null;
-      }
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-
-      // clear display video
-      try {
-        if (displayVideo.current) {
-          displayVideo.current.srcObject = null;
-          displayVideo.current.muted = false;
-        }
-      } catch (e) {}
     };
   }, []);
 
   function toggleMic() {
     if (!streamRef.current) return;
-    streamRef.current.getAudioTracks().forEach((t) => {
-      t.enabled = !t.enabled;
-      setMicOn(t.enabled);
+    const audioTracks = streamRef.current.getAudioTracks();
+    const enabled = !micOn;
+    audioTracks.forEach((t) => {
+      t.enabled = enabled;
     });
+    setMicOn(enabled);
   }
 
   function toggleVideo() {
-    // If there is no local stream object, nothing to stop/start
     if (!streamRef.current) return;
-
     const videoTracks = streamRef.current.getVideoTracks();
-
-    // If video is currently active, stop and remove video tracks to release camera
-    if (videoTracks.length > 0) {
-      // Stop any sender tracks and remove from RTCPeerConnection
-      try {
-        peerConnection.current.getSenders().forEach((s) => {
-          if (s.track && s.track.kind === "video") {
-            try {
-              s.track.stop();
-            } catch (e) {}
-            try {
-              s.replaceTrack(null);
-            } catch (e) {}
-          }
-        });
-      } catch (e) {}
-
-      // Stop and remove local video tracks
+    
+    // If video is on, disable it
+    if (videoTracks.length > 0 && videoOn) {
       videoTracks.forEach((t) => {
-        try {
-          t.stop();
-        } catch (e) {}
-        try {
-          streamRef.current.removeTrack(t);
-        } catch (e) {}
+        t.enabled = false;
       });
-
-      // If display currently shows local stream, clear it; remote (if present) will be handled by ontrack
-      try {
-        if (displayVideo.current && displayVideo.current.srcObject === streamRef.current) displayVideo.current.srcObject = null;
-      } catch (e) {}
-
       setVideoOn(false);
       return;
     }
 
-    // Otherwise re-acquire camera and attach video track(s)
-    (async () => {
-      try {
-        const newStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        const newVideoTrack = newStream.getVideoTracks()[0];
-
-        // Ensure streamRef.current is a MediaStream
-        if (!streamRef.current || !(streamRef.current.getTracks instanceof Function)) {
-          streamRef.current = new MediaStream();
-        }
-
-        try {
-          streamRef.current.addTrack(newVideoTrack);
-        } catch (e) {
-          streamRef.current = newStream;
-        }
-
-        // Update display preview (if no remote yet)
-        if (displayVideo.current && (!remoteVideo.current || !remoteVideo.current.srcObject)) displayVideo.current.srcObject = streamRef.current;
-
-        // Try to replace existing sender track, otherwise add a new track
-        const senders = peerConnection.current.getSenders();
-        let replaced = false;
-        for (const s of senders) {
-          if (s.track && s.track.kind === "video") {
-            try {
-              await s.replaceTrack(newVideoTrack);
-              replaced = true;
-              break;
-            } catch (e) {}
-          }
-        }
-
-        if (!replaced) {
-          try {
-            peerConnection.current.addTrack(newVideoTrack, streamRef.current);
-          } catch (e) {}
-        }
-
-        setVideoOn(true);
-      } catch (e) {
-        console.error("Unable to start video:", e);
-      }
-    })();
+    // If video is off, re-enable it
+    if (!videoOn && videoTracks.length > 0) {
+      videoTracks.forEach((t) => {
+        t.enabled = true;
+      });
+      setVideoOn(true);
+    }
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
-      <div style={{ position: "relative", display: "flex", justifyContent: "center", gap: "20px" }}>
-        <video ref={displayVideo} autoPlay playsInline style={{ background: "#000", width: "80vw", maxWidth: "1000px", height: "auto", borderRadius: "8px" }} />
-        {/* overlay caption inside video container */}
-        {typeof caption !== "undefined" && <CaptionOverlay caption={caption} />}
-        {/* SignDetector uses same stream for detection; appears invisible */}
-        {streamRef.current && <SignDetector stream={streamRef.current} sendCaption={sendCaption} />}
+      <div style={{ position: "relative", display: "flex", justifyContent: "center" }}>
+        <video
+          ref={displayVideo}
+          autoPlay
+          playsInline
+          muted
+          style={{ width: "80vw", maxWidth: "1000px", height: "auto", borderRadius: "8px", background: "#000" }}
+        />
+        {caption && <CaptionOverlay caption={caption} detectedSign={detectedSign} />}
+        {localStream && <SignDetector stream={localStream} sendCaption={handleSignDetection} />}
       </div>
-
       <div style={{ display: "flex", gap: "10px" }}>
         <button onClick={toggleMic}>{micOn ? "Mute" : "Unmute"}</button>
         <button onClick={toggleVideo}>{videoOn ? "Stop Video" : "Start Video"}</button>
