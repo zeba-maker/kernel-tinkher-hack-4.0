@@ -1,23 +1,34 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const cors = require("cors");
+import express from "express";
+import http from "http";
+import cors from "cors";
+import dotenv from "dotenv";
+import { Server } from "socket.io";
+import { setupSocket } from "./socket.js";
+import { detectSign } from "./gemini.js";
 
-const setupSocket = require("./socket");
+dotenv.config();
 
 const app = express();
-app.use(cors());
-
 const server = http.createServer(app);
 
-const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"],
-  },
+app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+
+// Gemini AI API route
+app.post("/api/detect-sign", async (req, res) => {
+  try {
+    const { image } = req.body;
+    const result = await detectSign(image);
+    res.json({ prediction: result });
+  } catch (err) {
+    res.status(500).json({ error: "AI detection failed" });
+  }
 });
 
-// Use separated socket logic
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
 setupSocket(io);
 
 server.listen(5000, () => {

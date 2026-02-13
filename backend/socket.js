@@ -1,15 +1,13 @@
-function setupSocket(io) {
+export function setupSocket(io) {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    socket.on("send-caption", (data) => {
-      socket.broadcast.emit("receive-caption", data);
+    socket.on("caption", (text) => {
+      socket.broadcast.emit("caption", text);
     });
 
     socket.on("disconnect", () => {
-      console.log("User disconnected:", socket.id);
+      console.log("User disconnected");
     });
   });
 }
-
-module.exports = setupSocket;
