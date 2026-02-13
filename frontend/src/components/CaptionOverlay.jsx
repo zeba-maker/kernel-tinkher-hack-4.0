@@ -1,15 +1,16 @@
 function CaptionOverlay({ caption }) {
   return (
-    <div
-      style={{
-        marginTop: "20px",
-        padding: "15px",
-        backgroundColor: "#f2f2f2",
-        fontSize: "22px",
-        minHeight: "50px",
-      }}
-    >
-      <strong>Live Caption:</strong> {caption}
+    <div style={{
+      position: "absolute",
+      bottom: 20,
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: "black",
+      color: "white",
+      padding: "10px",
+      borderRadius: "8px"
+    }}>
+      {caption}
     </div>
   );
 }
