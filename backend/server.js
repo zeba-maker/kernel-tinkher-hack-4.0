@@ -25,6 +25,11 @@ app.post("/api/detect-sign", async (req, res) => {
   }
 });
 
+// simple root route to indicate server is running
+app.get("/", (req, res) => {
+  res.send("Kernel Meet signaling server is running.");
+});
+
 const io = new Server(server, {
   cors: { origin: "*" }
 });
