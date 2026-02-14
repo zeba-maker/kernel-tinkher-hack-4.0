@@ -1,4 +1,4 @@
-[Project Name] 🎯
+[connect and meet] 🎯
 Basic Details
 Team Name: Kernel
 Team Members
@@ -63,13 +63,11 @@ Screenshots (Add at least 3)
 ![Screenshot3](Add screenshot 3 here with proper name) Add caption explaining what this shows
 
 Diagrams
-System Architecture:
+System Architecture
+The system follows a full‑stack web architecture. The frontend is built using React.js, where the user accesses the camera and microphone through the browser. WebRTC handles real‑time video communication between users. The Web Speech API converts spoken words into text captions in real time. The video frames are captured and sent to the sign detection module, which analyzes predefined hand gestures (5 selected signs). Socket.IO enables real‑time transmission of captions between connected users. The backend is built using Node.js and Express.js, which manages socket connections and real-time messaging.
 
-Architecture Diagram Explain your system architecture - components, data flow, tech stack interaction
-
-Application Workflow:
-
-Workflow Add caption explaining your workflow
+Application Workflow
+When the user opens the application, the browser requests camera and microphone permission. The live video stream is displayed using WebRTC. If the user speaks, the Web Speech API converts speech into text captions instantly. If the user performs one of the predefined hand signs, the Sign Detector captures the frame and identifies the sign. The detected text (either speech or sign) is displayed as captions and shared in real time with connected users through Socket.IO.
 
 For Hardware:
 Schematic & Circuit
@@ -89,7 +87,7 @@ Build Photos
 Additional Documentation
 For Web Projects with Backend:
 API Documentation
-Base URL: https://api.yourproject.com
+Base URL: http://localhost:5000
 
 Endpoints
 GET /api/endpoint
@@ -98,30 +96,35 @@ Description: [What it does]
 Parameters:
 param1 (string): [Description]
 param2 (integer): [Description]
-Response:
-{
-  "status": "success",
-  "data": {}
-}
-POST /api/endpoint
+GET /health
+Description: Checks if backend server is running.
 
-Description: [What it does]
-Request Body:
-{
-  "field1": "value1",
-  "field2": "value2"
-}
 Response:
+
 {
   "status": "success",
-  "message": "Operation completed"
+  "message": "Server running"
+}
+POST /detect-sign
+Description: Sends captured image frame for sign detection.
+
+Request Body:
+
+{
+  "image": "base64_encoded_image_string"
+}
+Response:
+
+{
+  "status": "success",
+  "prediction": "Hello"
 }
 [Add more endpoints as needed...]
 
 For Mobile Apps:
 App Flow Diagram
 App Flow Explain the user flow through your application
-
+User opens the website → Grants camera & microphone access → Video stream starts → Speech converts to text → Sign gestures convert to text → Captions displayed → Captions shared with other user.
 Installation Guide
 For Android (APK):
 
@@ -291,8 +294,8 @@ UI/UX design decisions
 Note: Proper documentation of AI usage demonstrates transparency and earns bonus points in evaluation!
 
 Team Contributions
-Saniya V S:  Frontend development, API integration, etc.]
-Zeba Saithalavi: Backend development, Database design, etc.]
+Saniya V S:   Frontend development, WebRTC integration, UI design
+Zeba Saithalavi: Backend development, Socket.IO integration, API design
 
 License
 This project is licensed under the [LICENSE_NAME] License - see the LICENSE file for details.
